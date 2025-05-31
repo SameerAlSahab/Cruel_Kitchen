@@ -24,6 +24,11 @@ on:
         description: 'Framework-res.apk direct download link (required if "use framework_res.apk" is ON)'
         required: false
         type: string
+      target_sdk:
+        description: 'Target SDK version (e.g., 34 for Android 14)'
+        required: false
+        type: number
+        default: 34
 
 jobs:
   cruel_kitchen:
@@ -103,68 +108,127 @@ jobs:
       - name: Make script executable
         run: chmod +x cruel_script.sh
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip openjdk-17-jre-headless patch expect wget
+
       - name: Run Cruel Kitchen Script (auto mode)
         env:
           PATCH_SET: "patchset"
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip zip openjdk-17-jre-headless patch expect wget
+          # Create required directories
+          mkdir -p output_apk workspace
+          
+          # Configure paths
           export INPUT_DIR="$PWD/input_apk"
-          export PATCHES_DIR="$PWD/resources/patches"
-          export RES_DIR="$PWD/framework_res"
           export OUTPUT_DIR="$PWD/output_apk"
           export WORK_ROOT="$PWD/workspace"
-          mkdir -p "$OUTPUT_DIR"
-          APK_FILE=$(ls input_apk/*.apk 2>/dev/null | head -n1)
-          JAR_FILE=$(ls input_apk/*.jar 2>/dev/null | head -n1)
-          SELECTED_FILE="$APK_FILE"
-          if [[ -z "$SELECTED_FILE" && -n "$JAR_FILE" ]]; then
-            SELECTED_FILE="$JAR_FILE"
-          fi
-          PATCH_SET_DIR="$PATCHES_DIR/patchset"
+          export PATCHES_DIR="$PWD/resources/patches"
+          
+          # Handle framework_res if needed
           if [[ "${{ github.event.inputs.use_framework_res }}" == "true" ]]; then
-            MENU_CMDS="1\n7\n2\n1\n3\n4\n5\n10\n"
-          else
-            MENU_CMDS="1\n2\n1\n3\n4\n5\n10\n"
+            export RES_DIR="$PWD/framework_res"
           fi
-          expect <<EOF
+          
+          # Create expect script
+          cat > auto_script.exp << 'EOF'
+#!/usr/bin/expect -f
+
+set timeout 120
+
 spawn ./cruel_script.sh
+
+# Wait for main menu
 expect "Enter your choice"
+
+# Select decompile option (1)
 send "1\r"
 expect "Select file"
 send "1\r"
+
+# Handle decompile result
 expect {
   "Press enter to continue..." { send "\r" }
-  "Operation failed. Press enter to continue..." { send "\r" }
+  "Operation failed. Press enter to continue..." { 
+    send "\r"
+    exit 1
+  }
+  timeout { exit 1 }
 }
+
+# Change SDK if needed
 expect "Enter your choice"
+if { "$env(TARGET_SDK)" != "" } {
+  send "6\r"
+  expect "Enter SDK version"
+  send "$env(TARGET_SDK)\r"
+  expect "Press enter to continue..."
+  send "\r"
+  expect "Enter your choice"
+}
+
+# Select patch set
 send "2\r"
 expect "Select patch set"
 send "1\r"
+
+# Handle patch set selection
 expect {
   "Press enter to continue..." { send "\r" }
-  "No patch sets available. Press enter to continue..." { send "\r" }
+  "No patch sets available. Press enter to continue..." { 
+    send "\r"
+    exit 1
+  }
+  timeout { exit 1 }
 }
+
+# Apply patches
 expect "Enter your choice"
 send "3\r"
+
+# Handle patch result
 expect {
   "Press enter to continue..." { send "\r" }
-  "Patching completed with errors. Press enter to continue..." { send "\r" }
+  "Patching completed with errors. Press enter to continue..." { 
+    send "\r"
+    # Continue even with patch errors
+  }
+  timeout { exit 1 }
 }
+
+# Rebuild
 expect "Enter your choice"
 send "4\r"
+
+# Handle rebuild result
 expect {
   "Press enter to continue..." { send "\r" }
-  "Rebuild failed. Press enter to continue..." { send "\r" }
+  "Rebuild failed. Press enter to continue..." { 
+    send "\r"
+    exit 1
+  }
+  timeout { exit 1 }
 }
+
+# Clean workspace
 expect "Enter your choice"
 send "5\r"
 expect "Press enter to continue..."
 send "\r"
+
+# Exit
 expect "Enter your choice"
-send "10\r"
+send "7\r"
 expect eof
 EOF
+
+          # Set SDK from input
+          export TARGET_SDK="${{ github.event.inputs.target_sdk }}"
+          
+          # Make expect script executable and run
+          chmod +x auto_script.exp
+          ./auto_script.exp
 
       - name: Upload rebuilt APK/JAR artifact
         uses: actions/upload-artifact@v4
