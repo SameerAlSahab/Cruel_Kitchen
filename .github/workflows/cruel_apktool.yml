@@ -128,42 +128,42 @@ jobs:
             MENU_CMDS="1\n2\n1\n3\n4\n5\n10\n"
           fi
           expect <<EOF
-          spawn ./cruel_script.sh
-          expect "Enter your choice"
-          send "1\r"
-          expect "Select file"
-          send "1\r"
-          expect {
-            "Press enter to continue..." { send "\r" }
-            "Operation failed. Press enter to continue..." { send "\r" }
-          }
-          expect "Enter your choice"
-          send "2\r"
-          expect "Select patch set"
-          send "1\r"
-          expect {
-            "Press enter to continue..." { send "\r" }
-            "No patch sets available. Press enter to continue..." { send "\r" }
-          }
-          expect "Enter your choice"
-          send "3\r"
-          expect {
-            "Press enter to continue..." { send "\r" }
-            "Patching completed with errors. Press enter to continue..." { send "\r" }
-          }
-          expect "Enter your choice"
-          send "4\r"
-          expect {
-            "Press enter to continue..." { send "\r" }
-            "Rebuild failed. Press enter to continue..." { send "\r" }
-          }
-          expect "Enter your choice"
-          send "5\r"
-          expect "Press enter to continue..."
-          send "\r"
-          expect "Enter your choice"
-          send "10\r"
-          expect eof
+spawn ./cruel_script.sh
+expect "Enter your choice"
+send "1\r"
+expect "Select file"
+send "1\r"
+expect {
+  "Press enter to continue..." { send "\r" }
+  "Operation failed. Press enter to continue..." { send "\r" }
+}
+expect "Enter your choice"
+send "2\r"
+expect "Select patch set"
+send "1\r"
+expect {
+  "Press enter to continue..." { send "\r" }
+  "No patch sets available. Press enter to continue..." { send "\r" }
+}
+expect "Enter your choice"
+send "3\r"
+expect {
+  "Press enter to continue..." { send "\r" }
+  "Patching completed with errors. Press enter to continue..." { send "\r" }
+}
+expect "Enter your choice"
+send "4\r"
+expect {
+  "Press enter to continue..." { send "\r" }
+  "Rebuild failed. Press enter to continue..." { send "\r" }
+}
+expect "Enter your choice"
+send "5\r"
+expect "Press enter to continue..."
+send "\r"
+expect "Enter your choice"
+send "10\r"
+expect eof
 EOF
 
       - name: Upload rebuilt APK/JAR artifact
