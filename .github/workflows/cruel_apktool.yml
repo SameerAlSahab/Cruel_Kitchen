@@ -43,7 +43,7 @@ jobs:
           APK="${{ github.event.inputs.apk_link }}"
           JAR="${{ github.event.inputs.jar_link }}"
           if [[ -z "$APK" && -z "$JAR" ]]; then
-            echo "❌ Either APK or JAR link must be provided."
+            echo "::error::Either APK or JAR link must be provided."
             exit 1
           fi
 
@@ -51,7 +51,7 @@ jobs:
         run: |
           PATCH_ZIP="${{ github.event.inputs.patch_zip_link }}"
           if [[ -z "$PATCH_ZIP" ]]; then
-            echo "❌ Patch zip link is required."
+            echo "::error::Patch zip link is required."
             exit 1
           fi
 
@@ -73,7 +73,7 @@ jobs:
           unzip -j patch.zip '*.patch' -d resources/patches/patchset/
           count=$(ls resources/patches/patchset/*.patch 2>/dev/null | wc -l)
           if [[ $count -eq 0 ]]; then
-            echo "❌ Patch zip must contain at least one .patch file."
+            echo "::error::Patch zip must contain at least one .patch file."
             exit 1
           fi
 
@@ -81,7 +81,7 @@ jobs:
         if: ${{ github.event.inputs.use_framework_res == 'true' }}
         run: |
           if [[ -z "${{ github.event.inputs.framework_res_link }}" ]]; then
-            echo "❌ framework_res.apk link is required if use_framework_res is ON."
+            echo "::error::framework_res.apk link is required if use_framework_res is ON."
             exit 1
           fi
           mkdir -p framework_res
@@ -90,15 +90,15 @@ jobs:
       - name: List files for debugging
         run: |
           echo "APK/JAR files:"
-          ls -lh input_apk
+          ls -lh input_apk || true
           echo "Patch files:"
-          ls -lh resources/patches/patchset/
+          ls -lh resources/patches/patchset/ || true
           if [[ -d framework_res ]]; then
             echo "Framework-res:"
-            ls -lh framework_res/
+            ls -lh framework_res/ || true
           fi
           echo "APKTool:"
-          ls -lh external/apktool/
+          ls -lh external/apktool/ || true
 
       - name: Make script executable
         run: chmod +x cruel_script.sh
@@ -108,7 +108,7 @@ jobs:
           PATCH_SET: "patchset"
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip openjdk-17-jre-headless patch expect
+          sudo apt-get install -y unzip zip openjdk-17-jre-headless patch expect wget
           export INPUT_DIR="$PWD/input_apk"
           export PATCHES_DIR="$PWD/resources/patches"
           export RES_DIR="$PWD/framework_res"
