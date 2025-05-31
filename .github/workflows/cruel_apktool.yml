@@ -1,0 +1,174 @@
+name: Cruel Kitchen's ApkTool Automated Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_link:
+        description: 'APK direct download link (required if no JAR or JAR link provided)'
+        required: false
+        type: string
+      jar_link:
+        description: 'JAR direct download link (required if no APK or APK link provided)'
+        required: false
+        type: string
+      patch_zip_link:
+        description: 'Patch ZIP file direct download link (must contain one or more .patch files, no extra folders)'
+        required: true
+        type: string
+      use_framework_res:
+        description: 'Use framework_res.apk?'
+        required: false
+        type: boolean
+        default: false
+      framework_res_link:
+        description: 'Framework-res.apk direct download link (required if "use framework_res.apk" is ON)'
+        required: false
+        type: string
+
+jobs:
+  cruel_kitchen:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate input (require one of APK/JAR)
+        id: validate
+        run: |
+          set -e
+          APK="${{ github.event.inputs.apk_link }}"
+          JAR="${{ github.event.inputs.jar_link }}"
+          if [[ -z "$APK" && -z "$JAR" ]]; then
+            echo "❌ Either APK or JAR link must be provided."
+            exit 1
+          fi
+
+      - name: Ensure patch zip input is valid
+        run: |
+          PATCH_ZIP="${{ github.event.inputs.patch_zip_link }}"
+          if [[ -z "$PATCH_ZIP" ]]; then
+            echo "❌ Patch zip link is required."
+            exit 1
+          fi
+
+      - name: Download APK/JAR
+        run: |
+          mkdir -p input_apk
+          if [[ -n "${{ github.event.inputs.apk_link }}" ]]; then
+            wget -O input_apk/input.apk "${{ github.event.inputs.apk_link }}"
+            echo "APK downloaded."
+          elif [[ -n "${{ github.event.inputs.jar_link }}" ]]; then
+            wget -O input_apk/input.jar "${{ github.event.inputs.jar_link }}"
+            echo "JAR downloaded."
+          fi
+
+      - name: Download Patch ZIP
+        run: |
+          mkdir -p resources/patches/patchset
+          wget -O patch.zip "${{ github.event.inputs.patch_zip_link }}"
+          unzip -j patch.zip '*.patch' -d resources/patches/patchset/
+          count=$(ls resources/patches/patchset/*.patch 2>/dev/null | wc -l)
+          if [[ $count -eq 0 ]]; then
+            echo "❌ Patch zip must contain at least one .patch file."
+            exit 1
+          fi
+
+      - name: Conditionally download framework_res.apk
+        if: ${{ github.event.inputs.use_framework_res == 'true' }}
+        run: |
+          if [[ -z "${{ github.event.inputs.framework_res_link }}" ]]; then
+            echo "❌ framework_res.apk link is required if use_framework_res is ON."
+            exit 1
+          fi
+          mkdir -p framework_res
+          wget -O framework_res/framework_res.apk "${{ github.event.inputs.framework_res_link }}"
+
+      - name: List files for debugging
+        run: |
+          echo "APK/JAR files:"
+          ls -lh input_apk
+          echo "Patch files:"
+          ls -lh resources/patches/patchset/
+          if [[ -d framework_res ]]; then
+            echo "Framework-res:"
+            ls -lh framework_res/
+          fi
+          echo "APKTool:"
+          ls -lh external/apktool/
+
+      - name: Make script executable
+        run: chmod +x cruel_script.sh
+
+      - name: Run Cruel Kitchen Script (auto mode)
+        env:
+          PATCH_SET: "patchset"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip openjdk-17-jre-headless patch expect
+          export INPUT_DIR="$PWD/input_apk"
+          export PATCHES_DIR="$PWD/resources/patches"
+          export RES_DIR="$PWD/framework_res"
+          export OUTPUT_DIR="$PWD/output_apk"
+          export WORK_ROOT="$PWD/workspace"
+          mkdir -p "$OUTPUT_DIR"
+          APK_FILE=$(ls input_apk/*.apk 2>/dev/null | head -n1)
+          JAR_FILE=$(ls input_apk/*.jar 2>/dev/null | head -n1)
+          SELECTED_FILE="$APK_FILE"
+          if [[ -z "$SELECTED_FILE" && -n "$JAR_FILE" ]]; then
+            SELECTED_FILE="$JAR_FILE"
+          fi
+          PATCH_SET_DIR="$PATCHES_DIR/patchset"
+          if [[ "${{ github.event.inputs.use_framework_res }}" == "true" ]]; then
+            MENU_CMDS="1\n7\n2\n1\n3\n4\n5\n10\n"
+          else
+            MENU_CMDS="1\n2\n1\n3\n4\n5\n10\n"
+          fi
+          expect <<EOF
+          spawn ./cruel_script.sh
+          expect "Enter your choice"
+          send "1\r"
+          expect "Select file"
+          send "1\r"
+          expect {
+            "Press enter to continue..." { send "\r" }
+            "Operation failed. Press enter to continue..." { send "\r" }
+          }
+          expect "Enter your choice"
+          send "2\r"
+          expect "Select patch set"
+          send "1\r"
+          expect {
+            "Press enter to continue..." { send "\r" }
+            "No patch sets available. Press enter to continue..." { send "\r" }
+          }
+          expect "Enter your choice"
+          send "3\r"
+          expect {
+            "Press enter to continue..." { send "\r" }
+            "Patching completed with errors. Press enter to continue..." { send "\r" }
+          }
+          expect "Enter your choice"
+          send "4\r"
+          expect {
+            "Press enter to continue..." { send "\r" }
+            "Rebuild failed. Press enter to continue..." { send "\r" }
+          }
+          expect "Enter your choice"
+          send "5\r"
+          expect "Press enter to continue..."
+          send "\r"
+          expect "Enter your choice"
+          send "10\r"
+          expect eof
+EOF
+
+      - name: Upload rebuilt APK/JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebuilt_apk_or_jar
+          path: output_apk/rebuilt_*
+          if-no-files-found: error
